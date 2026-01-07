@@ -10,6 +10,9 @@ pre-commit:
     format:
       glob: "*.{json,md,yml,yaml,toml,sh}"
       run: dprint fmt {staged_files} --allow-no-files && git add {staged_files} && dprint check {staged_files} --allow-no-files
+    shellcheck:
+      glob: "*.{sh,bash}"
+      run: shellcheck {staged_files}
 
 commit-msg:
   commands:

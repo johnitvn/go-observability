@@ -12,6 +12,11 @@
   "exec": {
     "commands": [
       {
+        "command": "shellcheck -f diff",
+        "exts": ["sh", "bash"],
+        "formatInput": true
+      },
+      {
         "command": "gofmt",
         "exts": ["go"],
         "stdin": true
