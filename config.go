@@ -25,8 +25,9 @@ type BaseConfig struct {
 	OtelTracingSampleRate float64 `env:"OTEL_TRACING_SAMPLE_RATE" env-default:"1.0"`
 }
 
+
 func (b *BaseConfig) SetMetadata(s, v, t string) {
-	if s != "" {
+	if s != "" && strings.TrimSpace(b.ServiceName) == "" {
 		b.ServiceName = s
 	}
 	b.Version = v
@@ -47,7 +48,7 @@ func LoadCfg(cfg any) error {
 
 	// 2. Inject LDFlags if applicable
 	if ms, ok := cfg.(MetadataSetter); ok {
-		ms.SetMetadata(ServiceName, Version, BuildTime)
+		ms.SetMetadata(GetServiceName(), GetVersion(), GetBuildTime())
 	}
 
 	// 3. Post-processing & Validation
@@ -66,8 +67,8 @@ func finalizeAndValidate(cfg any) error {
 	// Logic for ServiceName (LDFlags override)
 	f := v.FieldByName("ServiceName")
 	if f.IsValid() && f.CanSet() {
-		if ServiceName != "" {
-			f.SetString(ServiceName)
+		if GetServiceName() != "" && strings.TrimSpace(f.String()) == "" {
+			f.SetString(GetServiceName())
 		}
 		if strings.TrimSpace(f.String()) == "" {
 			return fmt.Errorf("SERVICE_NAME is required")
