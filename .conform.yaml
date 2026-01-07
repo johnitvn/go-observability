@@ -1,0 +1,30 @@
+policies:
+  - type: commit
+    spec:
+      gpg:
+        required: false
+      spellcheck:
+        locale: US
+      maximumOfOneCommit: false
+      conventional:
+        types:
+          - feat
+          - fix
+          - docs
+          - style
+          - refactor
+          - perf
+          - test
+          - build
+          - ci
+          - chore
+          - revert
+        scopes:
+          - devcontainer
+          - profile
+        descriptionLength: 72
+        header:
+          length: 89
+          imperative: true
+          case: lower
+          invalidLastCharacters: .

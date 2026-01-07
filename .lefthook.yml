@@ -1,0 +1,22 @@
+pre-commit:
+  parallel: true
+  commands:
+    gitleaks:
+      run: gitleaks detect --no-banner
+    golangci-lint:
+      tags: backend style
+      glob: "*.go"
+      run: golangci-lint run --fix {staged_files}
+    format:
+      glob: "*.{json,md,yml,yaml,toml,sh}"
+      run: dprint fmt {staged_files} --allow-no-files && git add {staged_files} && dprint check {staged_files} --allow-no-files
+
+commit-msg:
+  commands:
+    conform:
+      run: conform enforce --commit-msg-file {1}
+
+pre-push:
+  commands:
+    test:
+      run: echo "@TODO Need to implement tests before pushing!"

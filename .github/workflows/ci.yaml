@@ -1,0 +1,94 @@
+name: Integration
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+  merge_group:
+
+env:
+  CI: true
+
+jobs:
+  integration-checks:
+    name: Integration Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Run Gitleaks via Docker
+        run: |
+          docker run -v $(pwd):/path \
+            -e GITLEAKS_LICENSE=${{ secrets.GITLEAKS_LICENSE }} \
+            zricethezav/gitleaks:latest \
+            detect --source="/path" \
+            --verbose \
+            --redact \
+            --exit-code=2
+
+      - name: Checking dprint formatting
+        uses: dprint/check@v2.3
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.6
+
+      - name: Run integration tests
+        run: go test -v ./...
+
+  release:
+    # Release job: runs only on push to main and creates a release via
+    # googleapis/release-please-action. Uses a GitHub App token generated
+    # earlier in the steps to allow write access for tagging/release creation.
+    name: Release
+    needs: [integration-checks]
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Generate App Token
+        id: generate_token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.ECOMA_APP_ID }}
+          private_key: ${{ secrets.ECOMA_APP_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+
+      - name: Release
+        uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4
+        id: release-please
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+          release-type: go
+
+  report:
+    # Reporting job: always runs (even if previous jobs are skipped/failed)
+    # and sets a GitHub status via an external action.
+    name: Report
+    needs: [integration-checks, release]
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    steps:
+      - name: Setup project
+        uses: guibranco/github-status-action-v2@latest
+        with:
+          authToken: ${{secrets.GITHUB_TOKEN}}
+          context: ci-completed
+          state: ${{ (needs.integration-checks.result != 'failure' && needs.release.result != 'failure') && 'success' || 'failure' }}
+          sha: ${{github.event.pull_request.head.sha || github.sha}}

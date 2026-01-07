@@ -1,0 +1,66 @@
+{
+  "name": "Ecoma Backend",
+  "image": "ghcr.io/ecoma-io/devcontainer",
+  "runArgs": ["--name=ecoma-backend", "--privileged"],
+  "postCreateCommand": "bash ./devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "mcp": {
+        "servers": {
+          "filesystem": {
+            "command": "npx",
+            "args": [
+              "-y",
+              "@modelcontextprotocol/server-filesystem",
+              "."
+            ]
+          },
+          "sequential-thinking": {
+            "command": "npx",
+            "args": [
+              "-y",
+              "@modelcontextprotocol/server-sequential-thinking"
+            ]
+          },
+          "git": {
+            "type": "stdio",
+            "command": "npx",
+            "args": [
+              "@cyanheads/git-mcp-server@latest"
+            ],
+            "env": {
+              "MCP_TRANSPORT_TYPE": "stdio",
+              "MCP_LOG_LEVEL": "info",
+              "LOGS_DIR": "/var/log/git-mcp-server/"
+            }
+          },
+          "memory": {
+            "command": "npx",
+            "args": [
+              "-y",
+              "@modelcontextprotocol/server-memory"
+            ]
+          }
+        }
+      },
+      "extensions": [
+        "ms-azuretools.vscode-docker",
+        "GitHub.vscode-pull-request-github",
+        "redhat.vscode-yaml",
+        "timonwong.shellcheck",
+        "foxundermoon.shell-format",
+        "dprint.dprint",
+        "ms-vscode.makefile-tools",
+        "golang.go",
+        "ms-ossdata.vscode-pgsql",
+        "rohinivsenthil.rabbitrace",
+        "exiasr.hadolint"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "dprint.dprint"
+      }
+    }
+  }
+}
