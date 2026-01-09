@@ -1,8 +1,8 @@
 {
-  "name": "Ecoma Backend",
+  "name": "Ecoma Go Observability",
   "image": "ghcr.io/ecoma-io/devcontainer",
-  "runArgs": ["--name=ecoma-backend", "--privileged"],
-  "postCreateCommand": "bash ./devcontainer/post-create.sh",
+  "runArgs": ["--name=go-observability", "--privileged"],
+  "postCreateCommand": "lefthook install",
   "customizations": {
     "vscode": {
       "mcp": {
