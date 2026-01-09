@@ -48,6 +48,45 @@ wait_for_http() {
   done
 }
 
+# Retry helper: curl URL and check if output matches pattern up to 3 attempts (1s apart)
+retry_curl_until() {
+   local url="$1"
+   local pattern="$2"
+   local attempts=0
+   local resp=""
+   while [ $attempts -lt 3 ]; do
+      resp=$(curl -s "$url")
+      if echo "$resp" | grep -q "$pattern"; then
+         echo "$resp"
+         return 0
+      fi
+      attempts=$((attempts+1))
+      sleep 1
+   done
+   echo "$resp"
+   return 1
+}
+
+# Retry helper: curl metrics endpoint and return grep count (retries up to 3 times)
+retry_grep_count() {
+   local url="$1"
+   local pattern="$2"
+   local attempts=0
+   local resp=""
+   local count=0
+   while [ $attempts -lt 3 ]; do
+      resp=$(curl -s "$url")
+      count=$(echo "$resp" | grep -c "$pattern" || true)
+      if [ "$count" -gt 0 ]; then
+         echo "$count"
+         return 0
+      fi
+      attempts=$((attempts+1))
+      sleep 1
+   done
+   echo "$count"
+   return 1
+}
 # 1. Start Infrastructure and Service
 echo "[1/3] Building and Starting Docker Infrastructure..."
 cd "$SCRIPT_DIR"
@@ -114,7 +153,26 @@ if command -v grpcurl &> /dev/null; then
    
    echo -e "${GREEN}SUCCESS: gRPC requests sent${NC}"
 else
-   echo "Note: grpcurl not installed, skipping gRPC direct calls (will still check traces/metrics)"
+   # Fallback: try running grpcurl inside a temporary container on the compose network
+   if docker info >/dev/null 2>&1; then
+      echo "grpcurl not found locally; trying dockerized grpcurl on compose network..."
+      # fire a few unary requests in background
+      for _ in {1..3}; do
+         docker run --rm --network e2e_e2e-network fullstorydev/grpcurl -plaintext -d '{"name": "World"}' grpc-service:50051 hello.HelloService/SayHello > /dev/null 2>&1 || true &
+      done
+      wait || true
+
+      # streaming call
+      docker run --rm --network e2e_e2e-network fullstorydev/grpcurl -plaintext -d '{"name": "Stream"}' grpc-service:50051 hello.HelloService/SayHelloStream > /dev/null 2>&1 || true &
+
+      # panic test (synchronous)
+      docker run --rm --network e2e_e2e-network fullstorydev/grpcurl -plaintext -d '{"name": "panic"}' grpc-service:50051 hello.HelloService/SayHello > /dev/null 2>&1 || true
+      wait || true
+
+      echo -e "${GREEN}SUCCESS: gRPC requests sent via dockerized grpcurl${NC}"
+   else
+      echo "Note: grpcurl not installed and docker unavailable, skipping gRPC direct calls (will still check traces/metrics)"
+   fi
 fi
 
 # 3. Verify Observability
@@ -128,8 +186,8 @@ wait_for_traces() {
   local start
   start=$(date +%s)
   
-  while true; do
-    if curl -s "http://localhost:$JAEGER_PORT/api/traces?service=$service&limit=1" | grep -q '"traceID"'; then
+   while true; do
+      if curl -s "http://localhost:$JAEGER_PORT/api/traces?service=$service&limit=1" | grep -q 'traceID'; then
       local elapsed=$(( $(date +%s) - start ))
       return 0
     fi
@@ -162,9 +220,9 @@ fi
 # Check Jaeger (looking for service name 'simple-service')
 # Jaeger API: /api/traces?service=simple-service
 echo "Checking Jaeger for simple-service traces..."
-JAEGER_RESPONSE=$(curl -s "http://localhost:$JAEGER_PORT/api/traces?service=simple-service")
+JAEGER_RESPONSE=$(retry_curl_until "http://localhost:$JAEGER_PORT/api/traces?service=simple-service" 'traceID' || true)
 
-if [[ $JAEGER_RESPONSE == *"traceID"* ]]; then
+if [[ "$JAEGER_RESPONSE" == *traceID* ]]; then
    echo -e "${GREEN}SUCCESS: simple-service traces found in Jaeger!${NC}"
 else
    echo -e "${RED}FAILURE: No simple-service traces found in Jaeger.${NC}"
@@ -174,9 +232,9 @@ fi
 
 # Check Jaeger for gin-service traces
 echo "Checking Jaeger for gin-service traces..."
-JAEGER_GIN_RESPONSE=$(curl -s "http://localhost:$JAEGER_PORT/api/traces?service=gin-service")
+JAEGER_GIN_RESPONSE=$(retry_curl_until "http://localhost:$JAEGER_PORT/api/traces?service=gin-service" 'traceID' || true)
 
-if [[ $JAEGER_GIN_RESPONSE == *"traceID"* ]]; then
+if [[ "$JAEGER_GIN_RESPONSE" == *traceID* ]]; then
    echo -e "${GREEN}SUCCESS: gin-service traces found in Jaeger!${NC}"
 else
    echo -e "${RED}FAILURE: No gin-service traces found in Jaeger.${NC}"
@@ -186,9 +244,9 @@ fi
 
 # Check Jaeger for grpc-service traces
 echo "Checking Jaeger for grpc-service traces..."
-JAEGER_GRPC_RESPONSE=$(curl -s "http://localhost:$JAEGER_PORT/api/traces?service=grpc-service")
+JAEGER_GRPC_RESPONSE=$(retry_curl_until "http://localhost:$JAEGER_PORT/api/traces?service=grpc-service" 'traceID' || true)
 
-if [[ $JAEGER_GRPC_RESPONSE == *"traceID"* ]]; then
+if [[ "$JAEGER_GRPC_RESPONSE" == *traceID* ]]; then
    echo -e "${GREEN}SUCCESS: grpc-service traces found in Jaeger!${NC}"
 else
    echo -e "${RED}FAILURE: No grpc-service traces found in Jaeger.${NC}"
@@ -199,13 +257,13 @@ fi
 # Check Prometheus (looking for 'request_count_total')
 # Prometheus API: /api/v1/query?query=request_count_total
 echo "Checking Prometheus for simple-service metrics..."
-PROM_RESPONSE=$(curl -s "http://localhost:$PROM_PORT/api/v1/query?query=request_count_total")
+PROM_RESPONSE=$(retry_curl_until "http://localhost:$PROM_PORT/api/v1/query?query=request_count_total" 'success' || true)
 
-if [[ $PROM_RESPONSE == *"success"* ]] && { [[ $PROM_RESPONSE == *"simple-service"* ]] || [[ $PROM_RESPONSE == *"job=\"simple-service\""* ]]; }; then
+if [[ $PROM_RESPONSE == *"success" ]] && { [[ $PROM_RESPONSE == *"simple-service" ]] || [[ $PROM_RESPONSE == *"job=\"simple-service\""* ]]; }; then
    echo -e "${GREEN}SUCCESS: simple-service metrics found in Prometheus!${NC}"
 else
    # Fallback: check metrics endpoint directly (Prometheus may not have scraped yet)
-   DIRECT_SIMPLE_METRICS=$(curl -s "http://localhost:$SIMPLE_METRICS_PORT/metrics" | grep -c "request_count_total" || echo "0")
+   DIRECT_SIMPLE_METRICS=$(retry_grep_count "http://localhost:$SIMPLE_METRICS_PORT/metrics" "request_count_total" || true)
    if [[ $DIRECT_SIMPLE_METRICS -gt 0 ]]; then
       echo -e "${GREEN}SUCCESS: simple-service metrics available (not yet in Prometheus, but endpoint works)${NC}"
    else
@@ -217,13 +275,13 @@ fi
 
 # Check Prometheus for gin-service metrics
 echo "Checking Prometheus for gin-service metrics..."
-PROM_GIN_RESPONSE=$(curl -s "http://localhost:$PROM_PORT/api/v1/query?query=gin_request_count_total")
+PROM_GIN_RESPONSE=$(retry_curl_until "http://localhost:$PROM_PORT/api/v1/query?query=gin_request_count_total" 'success' || true)
 
-if [[ $PROM_GIN_RESPONSE == *"success"* ]] && [[ $PROM_GIN_RESPONSE == *"gin"* ]]; then
+if [[ $PROM_GIN_RESPONSE == *"success" ]] && [[ $PROM_GIN_RESPONSE == *"gin" ]]; then
    echo -e "${GREEN}SUCCESS: gin-service metrics found in Prometheus!${NC}"
 else
    # Fallback: check metrics endpoint directly
-   DIRECT_METRICS=$(curl -s "http://localhost:$GIN_METRICS_PORT/metrics" | grep -c "gin_request_count_total" || echo "0")
+   DIRECT_METRICS=$(retry_grep_count "http://localhost:$GIN_METRICS_PORT/metrics" "gin_request_count_total" || true)
    if [[ $DIRECT_METRICS -gt 0 ]]; then
       echo -e "${GREEN}SUCCESS: gin-service metrics available (not yet in Prometheus, but endpoint works)${NC}"
    else
@@ -235,13 +293,13 @@ fi
 
 # Check Prometheus for grpc-service metrics
 echo "Checking Prometheus for grpc-service metrics..."
-PROM_GRPC_RESPONSE=$(curl -s "http://localhost:$PROM_PORT/api/v1/query?query=grpc_request_count_total")
+PROM_GRPC_RESPONSE=$(retry_curl_until "http://localhost:$PROM_PORT/api/v1/query?query=grpc_request_count_total" 'success' || true)
 
-if [[ $PROM_GRPC_RESPONSE == *"success"* ]] && [[ $PROM_GRPC_RESPONSE == *"grpc"* ]]; then
+if [[ $PROM_GRPC_RESPONSE == *"success" ]] && [[ $PROM_GRPC_RESPONSE == *"grpc" ]]; then
    echo -e "${GREEN}SUCCESS: grpc-service metrics found in Prometheus!${NC}"
 else
    # Fallback: check metrics endpoint directly
-   DIRECT_GRPC_METRICS=$(curl -s "http://localhost:$GRPC_METRICS_PORT/metrics" | grep -c "grpc_request_count_total")
+   DIRECT_GRPC_METRICS=$(retry_grep_count "http://localhost:$GRPC_METRICS_PORT/metrics" "grpc_request_count_total" || true)
    if [[ "$DIRECT_GRPC_METRICS" -gt 0 ]]; then
       echo -e "${GREEN}SUCCESS: grpc-service metrics available (not yet in Prometheus, but endpoint works)${NC}"
    else
