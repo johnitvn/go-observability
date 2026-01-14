@@ -275,6 +275,54 @@ func TestGrpcUnaryRecoveryInterceptor(t *testing.T) {
 	}
 }
 
+func TestGrpcUnaryRecoveryInterceptor_WithTraceID(t *testing.T) {
+	// Initialize OTEL minimally so spans have valid trace IDs
+	cfg := BaseConfig{
+		ServiceName:           "test-grpc-otel",
+		Version:               "v1.0.0",
+		OtelEndpoint:          "localhost:4318",
+		OtelTracingSampleRate: 1.0,
+		MetricsPort:           19101,
+		MetricsMode:           "pull",
+		MetricsPath:           "/metrics",
+	}
+
+	shutdown, err := InitOtel(cfg)
+	if err != nil {
+		t.Fatalf("InitOtel failed: %v", err)
+	}
+	defer func() {
+		_ = shutdown(context.Background())
+	}()
+
+	logger := NewLogger(&BaseConfig{ServiceName: "test-grpc-service"})
+
+	// Start a span to obtain a non-zero trace id in the context
+	tracer := GetTracer("test-tracer")
+	ctx, span := tracer.Start(context.Background(), "parent-span")
+	span.End()
+
+	// Handler that panics to trigger the recovery interceptor
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		panic("panic-with-trace")
+	}
+
+	interceptor := GrpcUnaryRecoveryInterceptor(logger)
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/TestMethod"}
+
+	resp, err := interceptor(ctx, &mockRequest{Message: "x"}, info, handler)
+	if err == nil {
+		t.Fatal("expected error from panic recovery but got nil")
+	}
+	if resp != nil {
+		t.Fatalf("expected nil response after panic, got %v", resp)
+	}
+	st, ok := status.FromError(err)
+	if !ok || st.Code() != codes.Internal {
+		t.Fatalf("expected Internal status, got %v (ok=%v)", err, ok)
+	}
+}
+
 func TestGrpcStreamRecoveryInterceptor(t *testing.T) {
 	cfg := &BaseConfig{
 		ServiceName: "test-grpc-service",
@@ -382,5 +430,13 @@ func TestGrpcStreamInterceptors(t *testing.T) {
 		if interceptor == nil {
 			t.Errorf("Interceptor at index %d is nil", i)
 		}
+	}
+}
+
+func TestSetTrailerReturnsNil(t *testing.T) {
+	// Ensure setTrailer returns nil and does not panic when used with a background context
+	md := metadata.Pairs("test-key", "test-val")
+	if err := setTrailer(context.Background(), md); err != nil {
+		t.Errorf("expected nil error from setTrailer, got %v", err)
 	}
 }
