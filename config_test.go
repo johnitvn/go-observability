@@ -178,6 +178,43 @@ func TestLoadCfg(t *testing.T) {
 		}
 	})
 
+	// MetricsPort validation tests
+	t.Run("MetricsPort Validation", func(t *testing.T) {
+		_ = os.Unsetenv("LOG_LEVEL")
+		_ = os.Setenv("SERVICE_NAME", "port-test-service")
+		// Ensure a valid metrics mode for these checks
+		_ = os.Setenv("METRICS_MODE", "pull")
+
+		// Invalid: 0
+		_ = os.Setenv("METRICS_PORT", "0")
+		var cfg BaseConfig
+		err := LoadCfg(&cfg)
+		if err == nil {
+			t.Error("Expected LoadCfg to fail for METRICS_PORT=0")
+		}
+
+		// Invalid: too large
+		_ = os.Setenv("METRICS_PORT", "70000")
+		err = LoadCfg(&cfg)
+		if err == nil {
+			t.Error("Expected LoadCfg to fail for METRICS_PORT=70000")
+		}
+
+		// Valid: lower bound
+		_ = os.Setenv("METRICS_PORT", "1")
+		err = LoadCfg(&cfg)
+		if err != nil {
+			t.Fatalf("LoadCfg failed for METRICS_PORT=1: %v", err)
+		}
+
+		// Valid: upper bound
+		_ = os.Setenv("METRICS_PORT", "65535")
+		err = LoadCfg(&cfg)
+		if err != nil {
+			t.Fatalf("LoadCfg failed for METRICS_PORT=65535: %v", err)
+		}
+	})
+
 	t.Run("Metrics Protocol - HTTP", func(t *testing.T) {
 		_ = os.Unsetenv("LOG_LEVEL")
 		_ = os.Setenv("SERVICE_NAME", "http-protocol-service")

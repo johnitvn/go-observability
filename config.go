@@ -128,6 +128,19 @@ func finalizeAndValidate(cfg any) error {
 		}
 	}
 
+	// Logic for MetricsPort validation
+	portField := v.FieldByName("MetricsPort")
+	if portField.IsValid() {
+		// Accept signed integer kinds
+		switch portField.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			port := int(portField.Int())
+			if port < 1 || port > 65535 {
+				return fmt.Errorf("invalid METRICS_PORT: %d (must be between 1 and 65535)", port)
+			}
+		}
+	}
+
 	// Logic for MetricsProtocol validation
 	mpField := v.FieldByName("MetricsProtocol")
 	if mpField.IsValid() {
