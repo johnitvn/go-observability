@@ -2,6 +2,7 @@ package observability
 
 import (
 	"context"
+	"net"
 	"testing"
 	"time"
 )
@@ -202,4 +203,39 @@ func TestInitOtel(t *testing.T) {
 		defer cancel()
 		_ = shutdown(ctx) // Ignore error as collector may not be running
 	})
+}
+
+// TestInitOtel_BindFailure verifies InitOtel returns an error when the
+// metrics port is already bound by another listener.
+func TestInitOtel_BindFailure(t *testing.T) {
+	// Open a listener to occupy an available port on all interfaces.
+	ln, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatalf("failed to create occupying listener: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("unexpected listener addr type: %T", ln.Addr())
+	}
+
+	cfg := BaseConfig{
+		ServiceName:           "test-otel-bind-failure",
+		Version:               "1.0.0",
+		OtelEndpoint:          "localhost:4318",
+		OtelTracingSampleRate: 1.0,
+		MetricsPort:           tcpAddr.Port,
+		MetricsMode:           "pull",
+		MetricsPath:           "/metrics",
+	}
+
+	shutdown, err := InitOtel(cfg)
+	if err == nil {
+		// If no error, ensure we clean up the returned shutdown function.
+		if shutdown != nil {
+			_ = shutdown(context.Background())
+		}
+		t.Fatalf("expected InitOtel to fail binding to occupied port %d, but it succeeded", tcpAddr.Port)
+	}
 }

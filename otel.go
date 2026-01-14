@@ -3,6 +3,7 @@ package observability
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -80,8 +81,15 @@ func InitOtel(cfg BaseConfig) (func(context.Context) error, error) {
 			Handler: mux,
 		}
 
+		// Try to bind the metrics port immediately so startup failures (e.g., port in use)
+		// are returned to the caller instead of being logged asynchronously.
+		ln, err := net.Listen("tcp", metricsServer.Addr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to bind metrics server addr %s: %w", metricsServer.Addr, err)
+		}
+
 		go func() {
-			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			if err := metricsServer.Serve(ln); err != nil && err != http.ErrServerClosed {
 				fmt.Printf("Metrics server error: %v\n", err)
 			}
 		}()
@@ -147,8 +155,15 @@ func InitOtel(cfg BaseConfig) (func(context.Context) error, error) {
 			Handler: mux,
 		}
 
+		// Try to bind the metrics port immediately so startup failures (e.g., port in use)
+		// are returned to the caller instead of being logged asynchronously.
+		ln, err := net.Listen("tcp", metricsServer.Addr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to bind metrics server addr %s: %w", metricsServer.Addr, err)
+		}
+
 		go func() {
-			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			if err := metricsServer.Serve(ln); err != nil && err != http.ErrServerClosed {
 				fmt.Printf("Metrics server error: %v\n", err)
 			}
 		}()
