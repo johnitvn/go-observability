@@ -1,0 +1,39 @@
+version: "3"
+tasks:
+  docs:install:
+    desc: "Install MkDocs and plugins locally using pipx"
+    cmds:
+      - python3 -m pip install --user pipx || true
+      - python3 -m pipx ensurepath || true
+      - pipx install mkdocs --force || true
+      - pipx inject mkdocs mkdocs-material mkdocs-mermaid2-plugin "mkdocstrings[go,python]" --force || true
+
+  docs:serve:
+    desc: "Serve docs locally (uses pipx-run)"
+    cmds:
+      - /usr/local/py-utils/venvs/mkdocs/bin/mkdocs serve -a 0.0.0.0:8000
+
+  list:
+    desc: "Show available tasks"
+    cmds:
+      - task --list
+
+  analysis:
+    desc: "Run static analysis: prefer staticcheck, fallback to go vet"
+    cmds:
+      - go vet ./...
+
+  test:
+    desc: "Run unit tests"
+    cmds:
+      - go test ./... -v
+
+  build:
+    desc: "Build the project"
+    cmds:
+      - go build ./...
+
+  e2e:
+    desc: "Run end-to-end tests"
+    cmds:
+      - bash e2e/run-e2e.sh
