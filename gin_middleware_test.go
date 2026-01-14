@@ -482,3 +482,28 @@ func TestBackwardCompatibility(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 }
+
+func TestGinTracing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	// Use the simple GinTracing (no config) to ensure it is exercised
+	router.Use(GinTracing("test-service"))
+
+	router.GET("/trace-header", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	req, _ := http.NewRequest(http.MethodGet, "/trace-header", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	// GinTracing may inject X-Trace-ID header when a span is created.
+	// In test environments without a tracer provider the header may be empty.
+	traceID := w.Header().Get("X-Trace-ID")
+	t.Logf("X-Trace-ID header: %s", traceID)
+}
