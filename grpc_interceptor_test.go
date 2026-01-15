@@ -389,6 +389,51 @@ func TestGrpcStreamRecoveryInterceptor(t *testing.T) {
 	}
 }
 
+func TestGrpcStreamRecoveryInterceptor_WithTraceID(t *testing.T) {
+	// Initialize OTEL minimally so spans have valid trace IDs
+	cfg := BaseConfig{
+		ServiceName:           "test-grpc-otel-stream",
+		Version:               "v1.0.0",
+		OtelEndpoint:          "localhost:4318",
+		OtelTracingSampleRate: 1.0,
+		MetricsPort:           19102,
+		MetricsMode:           "pull",
+		MetricsPath:           "/metrics",
+	}
+
+	shutdown, err := InitOtel(cfg)
+	if err != nil {
+		t.Fatalf("InitOtel failed: %v", err)
+	}
+	defer func() { _ = shutdown(context.Background()) }()
+
+	logger := NewLogger(&BaseConfig{ServiceName: "test-grpc-service"})
+
+	// Start a span to create a non-zero trace id in the context
+	tracer := GetTracer("test-tracer")
+	ctx, span := tracer.Start(context.Background(), "parent-span-stream")
+	span.End()
+
+	// Handler that panics to trigger the recovery interceptor
+	handler := func(srv interface{}, stream grpc.ServerStream) error {
+		panic("panic-in-stream-with-trace")
+	}
+
+	interceptor := GrpcStreamRecoveryInterceptor(logger)
+	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/TestStreamMethod", IsClientStream: true, IsServerStream: true}
+
+	stream := &mockServerStream{ctx: ctx}
+
+	err = interceptor(nil, stream, info, handler)
+	if err == nil {
+		t.Fatal("expected error from stream panic recovery but got nil")
+	}
+	st, ok := status.FromError(err)
+	if !ok || st.Code() != codes.Internal {
+		t.Fatalf("expected Internal status, got %v (ok=%v)", err, ok)
+	}
+}
+
 func TestGrpcUnaryInterceptors(t *testing.T) {
 	cfg := &BaseConfig{
 		ServiceName: "test-grpc-service",
