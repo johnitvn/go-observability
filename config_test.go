@@ -284,3 +284,92 @@ func TestLoadCfg(t *testing.T) {
 		}
 	})
 }
+
+func TestSetMetadataAndFinalizeNonStruct(t *testing.T) {
+	// Ensure SetMetadata doesn't override an existing ServiceName but sets Version/BuildTime
+	var b BaseConfig
+	b.ServiceName = "existing-service"
+	b.Version = "old"
+	b.BuildTime = "oldtime"
+
+	b.SetMetadata("new-service", "v1.2.3", "2025-01-01")
+	if b.ServiceName != "existing-service" {
+		t.Errorf("Expected ServiceName to remain 'existing-service', got '%s'", b.ServiceName)
+	}
+	if b.Version != "v1.2.3" {
+		t.Errorf("Expected Version to be updated to 'v1.2.3', got '%s'", b.Version)
+	}
+	if b.BuildTime != "2025-01-01" {
+		t.Errorf("Expected BuildTime to be updated to '2025-01-01', got '%s'", b.BuildTime)
+	}
+
+	// finalizeAndValidate should be a no-op for non-structs (should not panic and return nil)
+	if err := finalizeAndValidate(new(int)); err != nil {
+		t.Errorf("Expected finalizeAndValidate to return nil for non-struct, got: %v", err)
+	}
+}
+
+func TestLoadCfgInjectsLdflags(t *testing.T) {
+	// Backup globals
+	origSN := ServiceName
+	origV := Version
+	origBT := BuildTime
+	defer func() { ServiceName, Version, BuildTime = origSN, origV, origBT }()
+
+	// Clear env so LoadCfg will rely on globals
+	_ = os.Unsetenv("SERVICE_NAME")
+	_ = os.Unsetenv("LOG_LEVEL")
+
+	ServiceName = "ldflag-service"
+	Version = "v9.9.9"
+	BuildTime = "2026-01-01"
+
+	var cfg BaseConfig
+	// Ensure cfg.ServiceName is empty so injection happens
+	cfg.ServiceName = ""
+
+	if err := LoadCfg(&cfg); err != nil {
+		t.Fatalf("LoadCfg failed when injecting LDFlags: %v", err)
+	}
+
+	if cfg.ServiceName != "ldflag-service" {
+		t.Errorf("Expected ServiceName to be injected from globals, got '%s'", cfg.ServiceName)
+	}
+	if cfg.Version != "v9.9.9" {
+		t.Errorf("Expected Version to be 'v9.9.9', got '%s'", cfg.Version)
+	}
+	if cfg.BuildTime != "2026-01-01" {
+		t.Errorf("Expected BuildTime to be '2026-01-01', got '%s'", cfg.BuildTime)
+	}
+}
+
+func TestLoadCfgReadsDotEnv(t *testing.T) {
+	// Create a temporary .env file and ensure LoadCfg reads it
+	content := "SERVICE_NAME=from-dotenv\nLOG_LEVEL=debug\nMETRICS_PORT=19100\n"
+	if err := os.WriteFile(".env", []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write .env: %v", err)
+	}
+	defer func() {
+		_ = os.Remove(".env")
+	}()
+
+	// Clear environment variables to ensure .env is used
+	_ = os.Unsetenv("SERVICE_NAME")
+	_ = os.Unsetenv("LOG_LEVEL")
+	_ = os.Unsetenv("METRICS_PORT")
+
+	var cfg BaseConfig
+	if err := LoadCfg(&cfg); err != nil {
+		t.Fatalf("LoadCfg failed reading .env: %v", err)
+	}
+
+	if cfg.ServiceName != "from-dotenv" {
+		t.Errorf("expected ServiceName 'from-dotenv', got '%s'", cfg.ServiceName)
+	}
+	if cfg.LogLevel != "debug" {
+		t.Errorf("expected LogLevel 'debug', got '%s'", cfg.LogLevel)
+	}
+	if cfg.MetricsPort != 19100 {
+		t.Errorf("expected MetricsPort 19100, got %d", cfg.MetricsPort)
+	}
+}
