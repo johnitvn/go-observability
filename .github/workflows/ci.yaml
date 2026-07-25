@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
       - name: Run Gitleaks via Docker
         run: |
           docker run -v $(pwd):/path \
@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Run E2E tests
         run: bash e2e/run-e2e.sh
@@ -88,7 +88,7 @@ jobs:
           private_key: ${{ secrets.ECOMA_APP_KEY }}
 
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           token: ${{ steps.generate_token.outputs.token }}
 
@@ -118,7 +118,7 @@ jobs:
       # Coverage upload: only run when integration-checks succeeded
       - name: Checkout
         if: ${{ needs.checks.result == 'success' && needs.e2e-tests.result == 'success' }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Download coverage artifact
         if: ${{ needs.checks.result == 'success' && needs.e2e-tests.result == 'success' }}
