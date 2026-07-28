@@ -37,7 +37,7 @@ jobs:
       - name: Checking dprint formatting
         uses: dprint/check@v2.3
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
 
@@ -129,7 +129,7 @@ jobs:
 
       - name: Set up Go (for coverage upload)
         if: ${{ needs.checks.result == 'success' && needs.e2e-tests.result == 'success' }}
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: stable
 
